@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.1.0 — 2021-04-08
+
+### Added
+
+- Add support for wildcard path matching instead of just file paths
+
 ## 2.0.0 — 2020-09-25
 
 ### Added
