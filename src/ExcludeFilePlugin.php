@@ -138,7 +138,7 @@ class ExcludeFilePlugin implements
 
             $autoload = $package->getAutoload();
 
-            foreach (['files', 'psr-4', 'psr-0', 'classmap'] as $type) {
+            foreach (array('psr-0', 'psr-4', 'classmap', 'files') as $type) {
 
                 // Skip misconfigured packages
                 if (!isset($autoload[$type]) || !is_array($autoload[$type])) {
@@ -167,7 +167,6 @@ class ExcludeFilePlugin implements
                     } else {
                         if ($this->doWildcardMatch($excludedFiles, $installPath)) {
                             unset($autoload[$type][$key]);
-                            //print_r($autoload);
                         }
                     }
                 }
