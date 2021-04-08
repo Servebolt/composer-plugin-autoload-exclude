@@ -23,7 +23,8 @@ class ExcludeFilePlugin implements
     PluginInterface,
     EventSubscriberInterface
 {
-    const EXCLUDE_FILES_PROPERTY = 'exclude-from-files';
+    const EXCLUDE_PATHS_PROPERTY = 'paths-to-exclude-from-autoload';
+    const TMP_IGNORED_PACKAGES_FOLDER_NAME = 'tmp-ignored-packages';
 
     /**
      * @var Composer
@@ -33,8 +34,8 @@ class ExcludeFilePlugin implements
     /**
      * Apply plugin modifications to Composer.
      *
-     * @param  Composer    $composer The Composer instance.
-     * @param  IOInterface $io       The Input/Output instance.
+     * @param Composer $composer The Composer instance.
+     * @param IOInterface $io The Input/Output instance.
      * @return void
      */
     public function activate(Composer $composer, IOInterface $io)
@@ -47,8 +48,8 @@ class ExcludeFilePlugin implements
      *
      * @codeCoverageIgnore
      *
-     * @param  Composer    $composer The Composer instance.
-     * @param  IOInterface $io       The Input/Output instance.
+     * @param Composer $composer The Composer instance.
+     * @param IOInterface $io The Input/Output instance.
      * @return void
      */
     public function deactivate(Composer $composer, IOInterface $io)
@@ -61,8 +62,8 @@ class ExcludeFilePlugin implements
      *
      * @codeCoverageIgnore
      *
-     * @param  Composer    $composer The Composer instance.
-     * @param  IOInterface $io       The Input/Output instance.
+     * @param Composer $composer The Composer instance.
+     * @param IOInterface $io The Input/Output instance.
      * @return void
      */
     public function uninstall(Composer $composer, IOInterface $io)
@@ -78,20 +79,12 @@ class ExcludeFilePlugin implements
     public static function getSubscribedEvents()
     {
         return array(
-            ScriptEvents::PRE_AUTOLOAD_DUMP => 'parseAutoloads',
+            ScriptEvents::PRE_AUTOLOAD_DUMP => 'ignorePackages',
+            ScriptEvents::POST_AUTOLOAD_DUMP => 'addPackages',
         );
     }
 
-    /**
-     * Parse the vendor 'files' to be included before the autoloader is dumped.
-     *
-     * Note: The double realpath() calls fixes failing Windows realpath() implementation.
-     * See https://bugs.php.net/bug.php?id=72738
-     * See \Composer\Autoload\AutoloadGenerator::dump()
-     *
-     * @return void
-     */
-    public function parseAutoloads()
+    public function ignorePackages()
     {
         $composer = $this->composer;
 
@@ -100,138 +93,106 @@ class ExcludeFilePlugin implements
             return;
         }
 
-        $excludedFiles = $this->parseExcludedFiles($this->getExcludedFiles($package));
-        if (!$excludedFiles) {
+        $pathsToExclude = $this->getPathsToExclude($package);
+        if (empty($pathsToExclude)) {
             return;
         }
 
-        $generator  = $composer->getAutoloadGenerator();
-        $packages   = $composer->getRepositoryManager()->getLocalRepository()->getCanonicalPackages();
-        $packageMap = $generator->buildPackageMap($composer->getInstallationManager(), $package, $packages);
+        $foldersToExclude = $this->resolveFoldersToExclude($pathsToExclude);
+        if (empty($foldersToExclude)) {
+            return;
+        }
 
-        $this->filterAutoloads($packageMap, $package, $excludedFiles);
+        $this->ensureTmpFolder();
+        $tmpFolderPath = $this->getTmpFolderPath();
+        $filesystem = new Filesystem();
+
+        foreach ($foldersToExclude as $folderToExclude) {
+            $folderName = $this->getFolderNameFromPath($folderToExclude);
+            $filesystem->copyThenRemove($folderToExclude, $tmpFolderPath . '/' . $folderName);
+        }
     }
 
-    /**
-     * Alters packages to exclude files required in "autoload.files" by "extra.exclude-from-files".
-     *
-     * @param  array            $packageMap    Array of `[ package, installDir-relative-to-composer.json) ]`.
-     * @param  PackageInterface $mainPackage   Root package instance.
-     * @param  string[]         $excludedFiles The files to exclude from the "files" autoload mechanism.
-     * @return void
-     */
-    private function filterAutoloads(array $packageMap, PackageInterface $mainPackage, array $excludedFiles)
+    public function addPackages()
     {
-        if (empty($excludedFiles)) {
-            return;
-        }
+        $tmpFolderPath = $this->getTmpFolderPath();
+        $filesystem = new Filesystem();
 
-        $excludedFiles = array_flip($excludedFiles);
-
-        foreach ($packageMap as $item) {
-            list($package, $installPath) = $item;
-
-            // Skip root package
-            if ($package === $mainPackage) {
-                continue;
-            }
-
-            $autoload = $package->getAutoload();
-
-            foreach (array('psr-0', 'psr-4', 'classmap', 'files') as $type) {
-
-                // Skip misconfigured packages
-                if (!isset($autoload[$type]) || !is_array($autoload[$type])) {
+        if (!$filesystem->isDirEmpty($tmpFolderPath)) {
+            $vendorPath = $this->getVendorFolderPath();
+            foreach (glob($tmpFolderPath . '/*') as $folder) {
+                if (!is_dir($folder)) {
                     continue;
                 }
-
-                if (null !== $package->getTargetDir()) {
-                    $installPath = substr($installPath, 0, -strlen('/' . $package->getTargetDir()));
-                }
-
-                foreach ($autoload[$type] as $key => $path) {
-                    if ($package->getTargetDir() && !is_readable($installPath.'/'.$path)) {
-                        // add target-dir from file paths that don't have it
-                        $path = $package->getTargetDir() . '/' . $path;
-                    }
-
-                    if (is_array($path)) {
-                        $path = current($path);
-                    }
-
-                    $resolvedPath = $installPath . '/' . $path;
-                    $resolvedPath = strtr($resolvedPath, '\\', '/');
-
-                    if (isset($excludedFiles[$resolvedPath])) {
-                        unset($autoload[$type][$key]);
-                    } else {
-                        if ($this->doWildcardMatch($excludedFiles, $installPath)) {
-                            unset($autoload[$type][$key]);
-                        }
-                    }
-                }
-            }
-
-            $package->setAutoload($autoload);
-        }
-    }
-
-    private function doWildcardMatch($excludedFiles, $installPath)
-    {
-        $excludedWildcardPaths = array_filter(array_flip($excludedFiles), function($item) {
-            return strpos($item, '*') !== false;
-        });
-        $excludedWildcardPaths = array_map(function($item) {
-            return trim($item, '*');
-        }, $excludedWildcardPaths);
-        foreach ($excludedWildcardPaths as $excludedWildcardPath) {
-            if (strpos($installPath, $excludedWildcardPath) !== false) {
-                return true;
+                $folderName = $this->getFolderNameFromPath($folder);
+                $filesystem->copy($folder, $vendorPath . '/' . $folderName);
             }
         }
-        return false;
+
+        $this->removeTmpFolder();
     }
 
-    /**
-     * Gets a list files the root package wants to exclude.
-     *
-     * @param  PackageInterface $package Root package instance.
-     * @return string[] Retuns the list of excluded files otherwise NULL if misconfigured or undefined.
-     */
-    private function getExcludedFiles(PackageInterface $package)
+    private function getFolderNameFromPath($path)
     {
-        $type = self::EXCLUDE_FILES_PROPERTY;
+        $pathParts = explode('/', $path);
+        return end($pathParts);
+    }
+
+    private function getVendorFolderPath()
+    {
+        $filesystem = new Filesystem();
+        $config = $this->composer->getConfig();
+        return $filesystem->normalizePath(realpath(realpath($config->get('vendor-dir'))));
+    }
+
+    private function resolveFoldersToExclude($pathsToExclude)
+    {
+        $vendorPath = $this->getVendorFolderPath();
+
+        $foldersToExclude = array();
+
+        foreach ($pathsToExclude as $path) {
+            $path = preg_replace('{/+}', '/', trim(strtr($path, '\\', '/'), '/'));
+            $path = trim($path, '*');
+            $path = $vendorPath . '/' . $path;
+            if (file_exists($path) && is_dir($path)) {
+                $foldersToExclude[] = rtrim($path, '/');
+            }
+        }
+
+        return $foldersToExclude;
+    }
+
+    private function getPathsToExclude(PackageInterface $package)
+    {
+        $pathToExclude = self::EXCLUDE_PATHS_PROPERTY;
 
         $extra = $package->getExtra();
 
-        if (isset($extra[$type]) && is_array($extra[$type])) {
-            return $extra[$type];
+        if (isset($extra[$pathToExclude]) && is_array($extra[$pathToExclude])) {
+            return $extra[$pathToExclude];
         }
 
         return array();
     }
 
-    /**
-     * Prepends the vendor directory to each path in "extra.exclude-from-files".
-     *
-     * @param  string[] $paths Array of paths relative to the composer manifest.
-     * @return string[] Retuns the array of paths, prepended with the vendor directory.
-     */
-    private function parseExcludedFiles(array $paths)
+    private function getTmpFolderPath()
     {
-        if (empty($paths)) {
-            return $paths;
-        }
+        $vendorPath = $this->getVendorFolderPath();
+        return $vendorPath . '/' . self::TMP_IGNORED_PACKAGES_FOLDER_NAME;
+    }
 
+    private function ensureTmpFolder()
+    {
+        $tmpFolderPath = $this->getTmpFolderPath();
+        if (!file_exists($tmpFolderPath)) {
+            mkdir($tmpFolderPath);
+        }
+    }
+
+    private function removeTmpFolder()
+    {
         $filesystem = new Filesystem();
-        $config     = $this->composer->getConfig();
-        $vendorPath = $filesystem->normalizePath(realpath(realpath($config->get('vendor-dir'))));
-
-        foreach ($paths as &$path) {
-            $path = preg_replace('{/+}', '/', trim(strtr($path, '\\', '/'), '/'));
-            $path = $vendorPath . '/' . $path;
-        }
-
-        return $paths;
+        $filesystem->removeDirectory($this->getTmpFolderPath(), false);
     }
 }
