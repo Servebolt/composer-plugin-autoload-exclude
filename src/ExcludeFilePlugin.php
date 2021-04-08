@@ -23,7 +23,6 @@ class ExcludeFilePlugin implements
     PluginInterface,
     EventSubscriberInterface
 {
-    const INCLUDE_FILES_PROPERTY = 'files';
     const EXCLUDE_FILES_PROPERTY = 'exclude-from-files';
 
     /**
@@ -129,8 +128,6 @@ class ExcludeFilePlugin implements
 
         $excludedFiles = array_flip($excludedFiles);
 
-        $type = self::INCLUDE_FILES_PROPERTY;
-
         foreach ($packageMap as $item) {
             list($package, $installPath) = $item;
 
@@ -141,29 +138,37 @@ class ExcludeFilePlugin implements
 
             $autoload = $package->getAutoload();
 
-            // Skip misconfigured packages
-            if (!isset($autoload[$type]) || !is_array($autoload[$type])) {
-                continue;
-            }
+            foreach (['files', 'psr-4', 'psr-0', 'classmap'] as $type) {
 
-            if (null !== $package->getTargetDir()) {
-                $installPath = substr($installPath, 0, -strlen('/' . $package->getTargetDir()));
-            }
-
-            foreach ($autoload[$type] as $key => $path) {
-                if ($package->getTargetDir() && !is_readable($installPath.'/'.$path)) {
-                    // add target-dir from file paths that don't have it
-                    $path = $package->getTargetDir() . '/' . $path;
+                // Skip misconfigured packages
+                if (!isset($autoload[$type]) || !is_array($autoload[$type])) {
+                    continue;
                 }
 
-                $resolvedPath = $installPath . '/' . $path;
-                $resolvedPath = strtr($resolvedPath, '\\', '/');
+                if (null !== $package->getTargetDir()) {
+                    $installPath = substr($installPath, 0, -strlen('/' . $package->getTargetDir()));
+                }
 
-                if (isset($excludedFiles[$resolvedPath])) {
-                    unset($autoload[$type][$key]);
-                } else {
-                    if ($this->doWildcardMatch($excludedFiles, $installPath)) {
+                foreach ($autoload[$type] as $key => $path) {
+                    if ($package->getTargetDir() && !is_readable($installPath.'/'.$path)) {
+                        // add target-dir from file paths that don't have it
+                        $path = $package->getTargetDir() . '/' . $path;
+                    }
+
+                    if (is_array($path)) {
+                        $path = current($path);
+                    }
+
+                    $resolvedPath = $installPath . '/' . $path;
+                    $resolvedPath = strtr($resolvedPath, '\\', '/');
+
+                    if (isset($excludedFiles[$resolvedPath])) {
                         unset($autoload[$type][$key]);
+                    } else {
+                        if ($this->doWildcardMatch($excludedFiles, $installPath)) {
+                            unset($autoload[$type][$key]);
+                            //print_r($autoload);
+                        }
                     }
                 }
             }
