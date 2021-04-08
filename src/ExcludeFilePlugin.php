@@ -161,11 +161,31 @@ class ExcludeFilePlugin implements
 
                 if (isset($excludedFiles[$resolvedPath])) {
                     unset($autoload[$type][$key]);
+                } else {
+                    if ($this->doWildcardMatch($excludedFiles, $installPath)) {
+                        unset($autoload[$type][$key]);
+                    }
                 }
             }
 
             $package->setAutoload($autoload);
         }
+    }
+
+    private function doWildcardMatch($excludedFiles, $installPath)
+    {
+        $excludedWildcardPaths = array_filter(array_flip($excludedFiles), function($item) {
+            return strpos($item, '*') !== false;
+        });
+        $excludedWildcardPaths = array_map(function($item) {
+            return trim($item, '*');
+        }, $excludedWildcardPaths);
+        foreach ($excludedWildcardPaths as $excludedWildcardPath) {
+            if (strpos($installPath, $excludedWildcardPath) !== false) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
