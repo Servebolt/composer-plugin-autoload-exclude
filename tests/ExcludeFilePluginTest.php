@@ -22,11 +22,11 @@ use Composer\Semver\Constraint\MatchAllConstraint;
 use Composer\Script\ScriptEvents;
 use Composer\Util\Filesystem;
 use Composer\Util\Silencer;
-use McAskill\Composer\ExcludeFilePlugin;
+use McAskill\Composer\ExcludeFolderPlugin;
 use PHPUnit\Framework\TestCase;
 use PHPUnit\Framework\MockObject;
 
-class ExcludeFilePluginTest extends TestCase
+class ExcludeFolderPluginTest extends TestCase
 {
     /**
      * @var string
@@ -152,11 +152,11 @@ class ExcludeFilePluginTest extends TestCase
             };
         }
 
-        $plugin = new ExcludeFilePlugin();
+        $plugin = new ExcludeFolderPlugin();
         $plugin->activate($this->composer, $this->io);
 
         // 1. Subscribed to "pre-autoload-dump" event
-        $subscriptions = ExcludeFilePlugin::getSubscribedEvents();
+        $subscriptions = ExcludeFolderPlugin::getSubscribedEvents();
         $this->assertArrayHasKey(ScriptEvents::PRE_AUTOLOAD_DUMP, $subscriptions);
 
         // 1. Check plugin is ignored if the root package is missing

@@ -1,12 +1,16 @@
 {
     "type": "composer-plugin",
-    "name": "mcaskill/composer-exclude-files",
-    "description": "Exclude files from autoload_files.php",
+    "name": "servebolt/composer-exclude-folders",
+    "description": "Exclude files from composer autoload",
     "license": "MIT",
     "authors": [
         {
             "name": "Chauncey McAskill",
             "email": "chauncey@mcaskill.ca"
+        },
+        {
+            "name": "Robert Sæther",
+            "email": "robert@servebolt.com"
         }
     ],
     "require": {
@@ -31,7 +35,7 @@
         "branch-alias": {
             "dev-main": "2.x-dev"
         },
-        "class": "McAskill\\Composer\\ExcludeFilePlugin"
+        "class": "McAskill\\Composer\\ExcludeFolderPlugin"
     },
     "config": {
         "platform": {

@@ -19,7 +19,7 @@ use Composer\Plugin\PluginInterface;
 use Composer\Script\ScriptEvents;
 use Composer\Util\Filesystem;
 
-class ExcludeFilePlugin implements
+class ExcludeFolderPlugin implements
     PluginInterface,
     EventSubscriberInterface
 {
