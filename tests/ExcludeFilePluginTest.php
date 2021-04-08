@@ -22,7 +22,7 @@ use Composer\Semver\Constraint\MatchAllConstraint;
 use Composer\Script\ScriptEvents;
 use Composer\Util\Filesystem;
 use Composer\Util\Silencer;
-use McAskill\Composer\ExcludeFolderPlugin;
+use McAskill\Composer\AutoloadExcludePlugin;
 use PHPUnit\Framework\TestCase;
 use PHPUnit\Framework\MockObject;
 
@@ -152,11 +152,11 @@ class ExcludeFolderPluginTest extends TestCase
             };
         }
 
-        $plugin = new ExcludeFolderPlugin();
+        $plugin = new AutoloadExcludePlugin();
         $plugin->activate($this->composer, $this->io);
 
         // 1. Subscribed to "pre-autoload-dump" event
-        $subscriptions = ExcludeFolderPlugin::getSubscribedEvents();
+        $subscriptions = AutoloadExcludePlugin::getSubscribedEvents();
         $this->assertArrayHasKey(ScriptEvents::PRE_AUTOLOAD_DUMP, $subscriptions);
 
         // 1. Check plugin is ignored if the root package is missing
@@ -197,7 +197,6 @@ class ExcludeFolderPluginTest extends TestCase
 
         // 2. Check plugin is ignored if the root package does not exclude files
         $plugin->parseAutoloads();
-
         $this->generator->dump($this->config, $this->repository, $package, $this->im, 'composer', true, '_1');
 
         // Check standard autoload

@@ -1,10 +1,10 @@
 # Changelog
 
-## 3.0.0 — 2021-04-08
+## 2.2.0 — 2021-04-08
 
 ### Added
 
-- Re-wrote logic to completely ignore folders
+- Added support for ignoring PSR-4 namespaces
 
 ## 2.1.0 — 2021-04-08
 
