@@ -1,7 +1,7 @@
 <?php
 
 /*
- * This file is part of the "composer-exclude-files" plugin.
+ * This file is part of the "composer-autoload-exclude" plugin.
  *
  * © Chauncey McAskill <chauncey@mcaskill.ca>
  *
@@ -23,6 +23,7 @@ class AutoloadExcludePlugin implements
     PluginInterface,
     EventSubscriberInterface
 {
+    const PLUGIN_SETTINGS_PROPERTY = 'autoload-exclude';
     const EXCLUDE_FILES_PROPERTY = 'exclude-from-files';
     const EXCLUDE_PSR4_PROPERTY = 'exclude-from-psr4';
     const EXCLUDE_CLASSMAP_PROPERTY = 'exclude-from-classmap';
@@ -31,6 +32,11 @@ class AutoloadExcludePlugin implements
      * @var Composer
      */
     private $composer;
+
+    /**
+     * @var IOInterface
+     */
+    private $io;
 
     /**
      * Apply plugin modifications to Composer.
@@ -42,6 +48,7 @@ class AutoloadExcludePlugin implements
     public function activate(Composer $composer, IOInterface $io)
     {
         $this->composer = $composer;
+        $this->io = $io;
     }
 
     /**
@@ -105,15 +112,21 @@ class AutoloadExcludePlugin implements
         $excludedFiles = $this->parseExcludedFiles($this->getExcludedFiles($package));
         $excludedPsr4 = $this->getExcludedPsr4($package);
         $excludedClassmap = $this->getExcludedClassmap($package);
-        if (!$excludedFiles && !$excludedFiles && !$excludedClassmap) {
+
+        if (empty($excludedFiles) && empty($excludedPsr4) && empty($excludedClassmap)) {
+            $this->io->notice('No configuration, aborting autoload exclude procedure.');
             return;
         }
+
+        $this->io->write('<info>Parsing packages for autoload exclusion...</info>');
 
         $generator = $composer->getAutoloadGenerator();
         $packages = $composer->getRepositoryManager()->getLocalRepository()->getCanonicalPackages();
         $packageMap = $generator->buildPackageMap($composer->getInstallationManager(), $package, $packages);
 
         $this->filterAutoloads($packageMap, $package, compact('excludedFiles', 'excludedPsr4', 'excludedClassmap'));
+
+        $this->io->write('<info>Done parsing packages for autoload exclusion.</info>');
     }
 
     /**
@@ -121,13 +134,12 @@ class AutoloadExcludePlugin implements
      *
      * @param array $packageMap Array of `[ package, installDir-relative-to-composer.json) ]`.
      * @param PackageInterface $mainPackage Root package instance.
-     * @param string[] $excludedFiles The files to exclude from the "files" autoload mechanism.
+     * @param string[] $excludedItems The files to exclude from the "files" autoload mechanism.
      * @return void
      */
     private function filterAutoloads(array $packageMap, PackageInterface $mainPackage, array $excludedItems)
     {
         extract($excludedItems);
-        $excludedFiles = array_flip($excludedFiles);
 
         foreach ($packageMap as $item) {
             list($package, $installPath) = $item;
@@ -137,19 +149,24 @@ class AutoloadExcludePlugin implements
                 continue;
             }
 
+            $this->io->debug(sprintf('Examining package %s', $package->getName()));
+
             $autoload = $package->getAutoload();
 
             foreach (array_keys($autoload) as $type) {
                 switch ($type) {
                     case 'files':
+                        $this->io->debug('Checking package autoload - files');
                         $this->handleFiles($autoload, $excludedFiles, $package, $installPath);
                         break;
                     /*
                     case 'classmap':
+                        $this->io->debug('Checking package autoload - classmap');
                         $this->handleClassmap($autoload, $excludedClassmap, $package);
                         break;
                     */
                     case 'psr-4':
+                        $this->io->debug('Checking package autoload - PSR-4');
                         $this->handlePsr4($autoload, $excludedPsr4, $package);
                         break;
                 }
@@ -200,6 +217,7 @@ class AutoloadExcludePlugin implements
      */
     private function handleFiles(&$autoload, $excludedFiles, $package, $installPath)
     {
+        $excludedFiles = array_flip($excludedFiles);
         if (null !== $package->getTargetDir()) {
             $installPath = substr($installPath, 0, -strlen('/' . $package->getTargetDir()));
         }
@@ -211,6 +229,7 @@ class AutoloadExcludePlugin implements
             $resolvedPath = $installPath . '/' . $path;
             $resolvedPath = strtr($resolvedPath, '\\', '/');
             if ($this->shouldExcludeFile($excludedFiles, $resolvedPath)) {
+                $this->io->write(sprintf('<info>Excluding file "%s"</info>', $resolvedPath));
                 unset($autoload['files'][$key]);
             }
         }
@@ -253,6 +272,7 @@ class AutoloadExcludePlugin implements
     {
         foreach ($autoload['psr-4'] as $namespace => $path) {
             if ($this->shouldExcludePsr4($excludedPsr4, $namespace, $path)) {
+                $this->io->write(sprintf('<info>Excluding namespace "%s"</info>', $namespace));
                 unset($autoload['psr-4'][$namespace]);
             }
         }
@@ -290,7 +310,7 @@ class AutoloadExcludePlugin implements
     private function getPluginSettings($package)
     {
         $extra = $package->getExtra();
-        $property = 'autoload-exclude';
+        $property = self::PLUGIN_SETTINGS_PROPERTY;
 
         if (isset($extra[$property]) && is_array($extra[$property])) {
             return $extra[$property];
