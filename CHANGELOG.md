@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.2.1 — 2021-04-09
+
+### Added
+
+- Added verbose messages during plugin execution
+
 ## 2.2.0 — 2021-04-08
 
 ### Added
