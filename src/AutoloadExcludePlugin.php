@@ -24,9 +24,10 @@ class AutoloadExcludePlugin implements
     EventSubscriberInterface
 {
     const PLUGIN_SETTINGS_PROPERTY = 'autoload-exclude';
-    const EXCLUDE_FILES_PROPERTY = 'exclude-from-files';
-    const EXCLUDE_PSR4_PROPERTY = 'exclude-from-psr4';
-    const EXCLUDE_CLASSMAP_PROPERTY = 'exclude-from-classmap';
+    const EXCLUDE_PACKAGES_PROPERTY = 'exclude-by-packages';
+    const EXCLUDE_FILES_PROPERTY = 'exclude-by-files';
+    const EXCLUDE_PSR4_PROPERTY = 'exclude-by-psr4-namespace';
+    const EXCLUDE_CLASSMAP_PROPERTY = 'exclude-by-classmap';
 
     /**
      * @var Composer
@@ -117,8 +118,9 @@ class AutoloadExcludePlugin implements
         $excludedFiles = $this->parseExcludedFiles($this->getExcludedFiles($package));
         $excludedPsr4 = $this->getExcludedPsr4($package);
         $excludedClassmap = $this->getExcludedClassmap($package);
+        $excludedPackages = $this->getExcludedPackages($package);
 
-        if (empty($excludedFiles) && empty($excludedPsr4) && empty($excludedClassmap)) {
+        if (empty($excludedFiles) && empty($excludedPsr4) && empty($excludedClassmap) && empty($excludedPackages)) {
             $this->io->notice('No configuration, aborting autoload exclude procedure.');
             return;
         }
@@ -129,7 +131,7 @@ class AutoloadExcludePlugin implements
         $packages = $composer->getRepositoryManager()->getLocalRepository()->getCanonicalPackages();
         $packageMap = $generator->buildPackageMap($composer->getInstallationManager(), $package, $packages);
 
-        $this->filterAutoloads($packageMap, $package, compact('excludedFiles', 'excludedPsr4', 'excludedClassmap'));
+        $this->filterAutoloads($packageMap, $package, compact('excludedFiles', 'excludedPsr4', 'excludedClassmap', 'excludedPackages'));
 
         $this->io->write('<info>Done parsing packages for autoload exclusion.</info>');
     }
@@ -155,6 +157,13 @@ class AutoloadExcludePlugin implements
             }
 
             $this->io->debug(sprintf('Examining package %s', $package->getName()));
+
+            // Check if we should exclude the whole package
+            if (in_array($package->getName(), $excludedPackages)) {
+                $this->io->write(sprintf('<info>Excluding package "%s"</info>', $package->getName()));
+                $package->setAutoload(array());
+                continue;
+            }
 
             $this->autoload = $package->getAutoload();
 
@@ -337,7 +346,7 @@ class AutoloadExcludePlugin implements
     }
 
     /**
-     * Gets a list of files the root package wants to exclude.
+     * Gets a list of files the root package wants to exclude in the autoload files.
      *
      * @param  PackageInterface $package Root package instance.
      * @return string[] Retuns the list of excluded files otherwise NULL if misconfigured or undefined.
@@ -354,8 +363,27 @@ class AutoloadExcludePlugin implements
         return array();
     }
 
+
     /**
-     * Gets a list of psr4-namespaces the root package wants to exclude.
+     * Gets a list of packages the root package wants to exclude in the autoload files.
+     *
+     * @param  PackageInterface $package Root package instance.
+     * @return string[] Retuns the list of excluded files otherwise NULL if misconfigured or undefined.
+     */
+    private function getExcludedPackages(PackageInterface $package)
+    {
+        $property = self::EXCLUDE_PACKAGES_PROPERTY;
+        $extra = $this->getPluginSettings($package);
+
+        if (isset($extra[$property]) && is_array($extra[$property])) {
+            return $extra[$property];
+        }
+
+        return array();
+    }
+
+    /**
+     * Gets a list of psr4-namespaces the root package wants to exclude in the autoload files.
      *
      * @param  PackageInterface $package Root package instance.
      * @return string[] Retuns the list of excluded files otherwise NULL if misconfigured or undefined.
@@ -373,7 +401,7 @@ class AutoloadExcludePlugin implements
     }
 
     /**
-     * Gets a list of class maps the root package wants to exclude.
+     * Gets a list of class maps the root package wants to exclude in the autoload files.
      *
      * @param  PackageInterface $package Root package instance.
      * @return string[] Retuns the list of excluded files otherwise NULL if misconfigured or undefined.

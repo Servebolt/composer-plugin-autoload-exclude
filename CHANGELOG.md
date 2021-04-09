@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.3.0 — 2021-04-09
+
+### Added
+
+- Renamed composer configuration properties
+- Added feature to exclude whole packages
+
 ## 2.2.1 — 2021-04-09
 
 ### Added
