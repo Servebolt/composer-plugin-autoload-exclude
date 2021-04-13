@@ -1,6 +1,6 @@
 {
     "type": "composer-plugin",
-    "name": "servebolt/composer-autoload-exclude",
+    "name": "servebolt/composer-exclude-from-autoload",
     "description": "Exclude files/namespaces from composer autoload.",
     "license": "MIT",
     "authors": [
